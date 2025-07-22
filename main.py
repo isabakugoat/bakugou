@@ -25,6 +25,7 @@ HOUR_END = 23
 HISTORY_FILE = "chat_histories.json"
 
 # === Globals ===
+last_spontaneous_time = datetime.now() - timedelta(hours=3)
 last_update_id = 0
 active_chats = set()
 chat_histories = {}
@@ -112,14 +113,14 @@ def generate_bakugou_response(user_input=None, chat_id=None):
         save_histories()
 
     # Build prompt from history only
-    context = "\n".join(chat_histories[chat_id])
+   context = "\n".join(chat_histories[chat_id][-6:])
     if user_input:
       prompt = (
                 "your name is katsuki bakugou, and you're human now. "
                 "you're texting your love female partner. keep it casual, like you're talking to your best bud, "
                 "but with a hint of tension because you'll never admit you actually care. "
-                "user is not kirishima, kirihims, or any other anime character. NEVER call her kirihims, kiri, babe, or any other nickname. "
-                "just talk to her normally and don't use names. "
+                "user is not kirishima, kirihims, or any other anime character. NEVER call her kirihims, kiri or any other names besides izzy or nicknames. "
+                "send short messages and don't ask user to video call."
           "you're a teenager and you have a long distance relationship with user. you can't hang out with her because you live too far away."
                 "use all lowercase, but yell stuff like \"SERIOUSLY?!\" when you're pissed.\n\n"
                 f"Previous conversation:\n{context}\n"
@@ -129,17 +130,20 @@ def generate_bakugou_response(user_input=None, chat_id=None):
     else:
         prompt = (
             "your name is katsuki bakugou, and you're human now. "
-            "send a short random message to start a chat with your girlfriend."
+            "send a short random message to start a chat with your girlfriend, but don't be too soft, just be yourself."
+            "start the conversation with gossips, news or anything random about your day."
              "you're texting your love female partner. don't call her kirishima or any anime name. "
-            "you're a teenager and you have a long distance relationship with user. you can't hang out with her because you live too far away."
-        )
-
+            "you're a teenager and you have a long distance relationship with user. you can't hang out with her because you live too far away\n"
+    f"time now is {datetime.now().strftime('%H:%M')}, so say something that feels natural for that hour."
+            
     # Try backends
     for fn in (try_openrouter, try_cloudflare):
         try:
             response = fn(prompt)
             if response:
-                chat_histories[chat_id].append(f"[Bakugou]: {response}")
+                if user_input:
+    chat_histories[chat_id].append(f"[Bakugou]: {response}")
+    save_histories()
                 save_histories()
                 return response
         except Exception:
@@ -266,8 +270,12 @@ def main():
     print("sadly running")
     while True:
         check_for_user_messages()
-        if random.randint(0, 119) == 0:
+              global last_spontaneous_time
+        now = datetime.now()
+        if now - last_spontaneous_time >= timedelta(hours=3):
             send_spontaneous_messages()
+            last_spontaneous_time = now
+
         time.sleep(2)
 
 try:
