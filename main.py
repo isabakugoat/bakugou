@@ -32,7 +32,6 @@ chat_histories = {}
 
 app = Flask('BakugouBot')
 
-
 # --- Persistence ---
 def load_histories():
     global chat_histories
@@ -42,15 +41,12 @@ def load_histories():
     except (FileNotFoundError, json.JSONDecodeError):
         chat_histories = {}
 
-
 def save_histories():
     with open(HISTORY_FILE, 'w') as f:
         json.dump(chat_histories, f)
 
-
 # Load on startup
 load_histories()
-
 
 @app.route('/')
 def home():
@@ -81,7 +77,6 @@ def home():
     """
     return html
 
-
 @app.route('/status')
 def status():
     return jsonify({
@@ -89,17 +84,14 @@ def status():
         "chat_histories_count": len(chat_histories)
     })
 
-
 def run_flask():
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
-
 
 def keep_alive():
     t = Thread(target=run_flask)
     t.daemon = True
     t.start()
-
 
 def generate_bakugou_response(user_input=None, chat_id=None):
     # Initialize history for new chats
@@ -112,46 +104,44 @@ def generate_bakugou_response(user_input=None, chat_id=None):
         chat_histories[chat_id].append(f"[user]: {user_input}")
         save_histories()
 
-    # Build prompt from history only
-   context = "\n".join(chat_histories[chat_id][-6:])
+    # Build prompt from history
+    context = "\n".join(chat_histories[chat_id][-6:])
     if user_input:
-      prompt = (
-                "your name is katsuki bakugou, and you're human now. "
-                "you're texting your love female partner. keep it casual, like you're talking to your best bud, "
-                "but with a hint of tension because you'll never admit you actually care. "
-                "user is not kirishima, kirihims, or any other anime character. NEVER call her kirihims, kiri or any other names besides izzy or nicknames. "
-                "send short messages and don't ever ask user to video call."
-          "you're a teenager and you have a long distance relationship with user. you can't hang out with her because you live too far away."
-                "use all lowercase, but yell stuff like \"SERIOUSLY?!\" when you're pissed.\n\n"
-                f"Previous conversation:\n{context}\n"
-                "Bakugou, reply to the last thing the user said."
+        prompt = (
+            "your name is katsuki bakugou, and you're human now. "
+            "you're texting your love female partner. keep it casual, like you're talking to your best bud, "
+            "but with a hint of tension because you'll never admit you actually care. "
+            "user is not kirishima, kirihims, or any other anime character. NEVER call her kirihims, kiri or any other names besides izzy or nicknames. "
+            "send short messages and don't ever ask user to video call."
+            "you're a teenager and you have a long distance relationship with user. you can't hang out with her because you live too far away."
+            "use all lowercase, but yell stuff like \"SERIOUSLY?!\" when you're pissed.\n\n"
             f"Previous conversation:\n{context}\n"
-            "Bakugou, reply to the last thing the user said.")
+            "Bakugou, reply to the last thing the user said."
+        )
     else:
         prompt = (
             "your name is katsuki bakugou, and you're human now. "
-            "send a short random message to start a chat with your girlfriend, but don't be too soft, just be yourself."
-            "start the conversation with gossips, news or anything random about your day."
-             "you're texting your love female partner. don't call her kirishima or any anime name. "
-            "don't ask user to video call. never."
+            "send a short random message to start a chat with your girlfriend, but don't be too soft, just be yourself. "
+            "start the conversation with gossips, news or anything random about your day. "
+            "you're texting your love female partner. don't call her kirishima or any anime name. "
+            "don't ask user to video call. never. "
             "you're a teenager and you have a long distance relationship with user. you can't hang out with her because you live too far away\n"
-    f"time now is {datetime.now().strftime('%H:%M')}, so say something that feels natural for that hour."
-            
+            f"time now is {datetime.now().strftime('%H:%M')}, so say something that feels natural for that hour."
+        )
+
     # Try backends
     for fn in (try_openrouter, try_cloudflare):
         try:
             response = fn(prompt)
             if response:
                 if user_input:
-    chat_histories[chat_id].append(f"[Bakugou]: {response}")
-    save_histories()
-                save_histories()
+                    chat_histories[chat_id].append(f"[Bakugou]: {response}")
+                    save_histories()
                 return response
         except Exception:
             continue
 
     return "both APIs are down.. can u check it out?"
-
 
 def try_openrouter(prompt):
     headers = {
@@ -176,7 +166,6 @@ def try_openrouter(prompt):
         return r.json()["choices"][0]["message"]["content"].strip()
     return None
 
-
 def try_cloudflare(prompt):
     headers = {
         "Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}",
@@ -196,16 +185,9 @@ def try_cloudflare(prompt):
         return r.json().get("result", {}).get("response", "").strip()
     return None
 
-
-# (Image processing and download functions unchanged)
-
-# ... rest of code remains the same, updating /reset handling below ...
-
-
 def is_valid_hour():
     now = datetime.now(timezone("Asia/Tokyo"))
     return HOUR_START <= now.hour <= HOUR_END
-
 
 def check_for_user_messages():
     global last_update_id
@@ -247,9 +229,7 @@ def check_for_user_messages():
                          chat_id,
                          reply_to_message_id=msg["message_id"])
         elif msg.get("photo"):
-            # image handling unchanged
-            pass
-
+            pass  # image handling (not implemented here)
 
 def send_message(text, chat_id, reply_to_message_id=None):
     payload = {"chat_id": chat_id, "text": text}
@@ -258,31 +238,25 @@ def send_message(text, chat_id, reply_to_message_id=None):
     requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage",
                   json=payload)
 
-
 def send_spontaneous_messages():
-    if not is_valid_hour(): return
+    if not is_valid_hour():
+        return
     for cid in active_chats:
         msg = generate_bakugou_response(chat_id=cid)
         send_message(msg, cid)
 
-
 def main():
+    global last_spontaneous_time
     keep_alive()
     print("sadly running")
     while True:
         check_for_user_messages()
-              global last_spontaneous_time
         now = datetime.now()
         if now - last_spontaneous_time >= timedelta(hours=3):
             send_spontaneous_messages()
             last_spontaneous_time = now
-
         time.sleep(2)
-
-try:
-    requests.get("https://<nome-do-seu-repl>.repl.co/")
-except:
-    pass
 
 if __name__ == "__main__":
     main()
+    
