@@ -21,10 +21,21 @@ HOUR_START = 6
 HOUR_END = 23
 HISTORY_FILE = "chat_histories.json"
 MAX_HISTORY = 20  # Mantém até 20 mensagens
+
+# Lista de fotos
 PHOTO_LIST = [
     "https://i.pinimg.com/564x/1a/f2/3c/1af23c4e7c.jpg",
     "https://i.pinimg.com/736x/45/12/3e/45123e78c.jpg",
     "https://i.pinimg.com/564x/67/ab/32/67ab32123.jpg"
+]
+
+# Legendas aleatórias para fotos
+PHOTO_CAPTIONS = [
+    "tch, here. happy now?",
+    "ugh, fine. don't get used to it.",
+    "why the hell do you even want this?",
+    "whatever. here.",
+    "quit asking, dumbass. there."
 ]
 
 # === Globals ===
@@ -225,33 +236,38 @@ def check_for_user_messages():
         user_text = msg.get("text")
 
         if user_text:
-    text_lower = user_text.lower()
+            text_lower = user_text.lower()
 
-    # Detect keywords for photo request
-    photo_keywords = ["send a pic", "send me a pic", "send a photo", "send me a photo", "show me a pic", "show me a photo"]
+            # Detect keywords for photo request
+            photo_keywords = [
+                "send a pic", "send me a pic",
+                "send a photo", "send me a photo",
+                "show me a pic", "show me a photo"
+            ]
 
-    if any(keyword in text_lower for keyword in photo_keywords):
-        photo_url = random.choice(PHOTO_LIST)
-        send_photo(chat_id, photo_url, caption="tch, here. happy now?")
-        continue
+            if any(keyword in text_lower for keyword in photo_keywords):
+                photo_url = random.choice(PHOTO_LIST)
+                caption = random.choice(PHOTO_CAPTIONS)
+                send_photo(chat_id, photo_url, caption=caption)
+                continue
 
-    # Reset command
-    cmd = user_text.strip().split()[0].lower().split('@')[0]
-    if cmd == "/reset":
-        chat_histories.pop(chat_id, None)
-        save_histories()
-        resp = generate_bakugou_response(chat_id=chat_id)
-        send_message(resp,
-                     chat_id,
-                     reply_to_message_id=msg["message_id"])
-        continue
+            # Reset command
+            cmd = user_text.strip().split()[0].lower().split('@')[0]
+            if cmd == "/reset":
+                chat_histories.pop(chat_id, None)
+                save_histories()
+                resp = generate_bakugou_response(chat_id=chat_id)
+                send_message(resp,
+                             chat_id,
+                             reply_to_message_id=msg["message_id"])
+                continue
 
-    # Normal response
-    response = generate_bakugou_response(user_input=user_text,
-                                         chat_id=chat_id)
-    send_message(response,
-                 chat_id,
-                 reply_to_message_id=msg["message_id"])
+            # Normal response
+            response = generate_bakugou_response(user_input=user_text,
+                                                 chat_id=chat_id)
+            send_message(response,
+                         chat_id,
+                         reply_to_message_id=msg["message_id"])
         elif msg.get("photo"):
             pass  # future: handle images here
 
