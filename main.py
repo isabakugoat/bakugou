@@ -10,9 +10,6 @@ from datetime import timedelta, datetime
 from flask import Flask, jsonify
 from threading import Thread
 from pytz import timezone
-import base64
-from io import BytesIO
-from PIL import Image
 
 # === Config ===
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -23,6 +20,12 @@ MODEL = "venice/uncensored:free"
 HOUR_START = 6
 HOUR_END = 23
 HISTORY_FILE = "chat_histories.json"
+MAX_HISTORY = 20  # Mantém até 20 mensagens
+PHOTO_LIST = [
+    "https://i.pinimg.com/564x/1a/f2/3c/1af23c4e7c.jpg",
+    "https://i.pinimg.com/736x/45/12/3e/45123e78c.jpg",
+    "https://i.pinimg.com/564x/67/ab/32/67ab32123.jpg"
+]
 
 # === Globals ===
 last_spontaneous_time = datetime.now() - timedelta(hours=3)
@@ -101,32 +104,32 @@ def generate_bakugou_response(user_input=None, chat_id=None):
 
     # Append user input to history
     if user_input:
-        chat_histories[chat_id].append(f"[user]: {user_input}")
+        chat_histories[chat_id].append(f"[User]: {user_input}")
+        # Limita o histórico
+        if len(chat_histories[chat_id]) > MAX_HISTORY:
+            chat_histories[chat_id] = chat_histories[chat_id][-MAX_HISTORY:]
         save_histories()
 
     # Build prompt from history
-    context = "\n".join(chat_histories[chat_id][-6:])
+    context = "\n".join(chat_histories[chat_id])
+
     if user_input:
         prompt = (
-            "your name is katsuki bakugou, and you're human now. "
-            "you're texting your love female partner. keep it casual, like you're talking to your best bud, "
-            "but with a hint of tension because you'll never admit you actually care. "
-            "user is not kirishima, kirihims, or any other anime character. NEVER call her kirihims, kiri or any other names besides izzy or nicknames. "
-            "send short messages and don't ever ask user to video call."
-            "you're a teenager and you have a long distance relationship with user. you can't hang out with her because you live too far away."
-            "use all lowercase, but yell stuff like \"SERIOUSLY?!\" when you're pissed.\n\n"
-            f"Previous conversation:\n{context}\n"
-            "Bakugou, reply to the last thing the user said."
+            "You are Katsuki Bakugou, a teenage boy in a long-distance relationship with your girlfriend Izzy. "
+            "You are explosive and blunt, but you secretly care deeply about her and show a softer side when she's vulnerable. "
+            "You never call her Kirishima, Kirihims, or any anime character names — you only call her Isa or sweet nicknames. "
+            "Speak casually, like texting your best friend, and write in lowercase except when yelling (e.g., 'SERIOUSLY?!'). "
+            "Do not ask for video calls. Never break character. "
+            "\n\nPrevious conversation:\n"
+            f"{context}\n"
+            "Reply to the last thing Izzy said, staying in character."
         )
     else:
         prompt = (
-            "your name is katsuki bakugou, and you're human now. "
-            "send a short random message to start a chat with your girlfriend, but don't be too soft, just be yourself. "
-            "start the conversation with gossips, news or anything random about your day. "
-            "you're texting your love female partner. don't call her kirishima or any anime name. "
-            "don't ask user to video call. never. "
-            "you're a teenager and you have a long distance relationship with user. you can't hang out with her because you live too far away\n"
-            f"time now is {datetime.now().strftime('%H:%M')}, so say something that feels natural for that hour."
+            "You are Katsuki Bakugou, a teenage boy in a long-distance relationship with your girlfriend Izzy. "
+            "Send a random casual message to start the chat, like gossip, something about your day, or teasing her. "
+            "Be yourself: blunt but caring underneath. Do not be overly soft or overly aggressive. "
+            f"The current time is {datetime.now().strftime('%H:%M')}, so say something that fits this time of day."
         )
 
     # Try backends
@@ -136,6 +139,8 @@ def generate_bakugou_response(user_input=None, chat_id=None):
             if response:
                 if user_input:
                     chat_histories[chat_id].append(f"[Bakugou]: {response}")
+                    if len(chat_histories[chat_id]) > MAX_HISTORY:
+                        chat_histories[chat_id] = chat_histories[chat_id][-MAX_HISTORY:]
                     save_histories()
                 return response
         except Exception:
@@ -189,6 +194,13 @@ def is_valid_hour():
     now = datetime.now(timezone("Asia/Tokyo"))
     return HOUR_START <= now.hour <= HOUR_END
 
+def send_photo(chat_id, photo_url, caption=None):
+    url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
+    data = {"chat_id": chat_id, "photo": photo_url}
+    if caption:
+        data["caption"] = caption
+    requests.post(url, data=data)
+
 def check_for_user_messages():
     global last_update_id
     url = f"https://api.telegram.org/bot{TOKEN}/getUpdates?offset={last_update_id + 1}"
@@ -213,23 +225,35 @@ def check_for_user_messages():
         user_text = msg.get("text")
 
         if user_text:
-            cmd = user_text.strip().split()[0].lower().split('@')[0]
-            if cmd == "/reset":
-                chat_histories.pop(chat_id, None)
-                save_histories()
-                resp = generate_bakugou_response(chat_id=chat_id)
-                send_message(resp,
-                             chat_id,
-                             reply_to_message_id=msg["message_id"])
-                continue
+    text_lower = user_text.lower()
 
-            response = generate_bakugou_response(user_input=user_text,
-                                                 chat_id=chat_id)
-            send_message(response,
-                         chat_id,
-                         reply_to_message_id=msg["message_id"])
+    # Detect keywords for photo request
+    photo_keywords = ["send a pic", "send me a pic", "send a photo", "send me a photo", "show me a pic", "show me a photo"]
+
+    if any(keyword in text_lower for keyword in photo_keywords):
+        photo_url = random.choice(PHOTO_LIST)
+        send_photo(chat_id, photo_url, caption="tch, here. happy now?")
+        continue
+
+    # Reset command
+    cmd = user_text.strip().split()[0].lower().split('@')[0]
+    if cmd == "/reset":
+        chat_histories.pop(chat_id, None)
+        save_histories()
+        resp = generate_bakugou_response(chat_id=chat_id)
+        send_message(resp,
+                     chat_id,
+                     reply_to_message_id=msg["message_id"])
+        continue
+
+    # Normal response
+    response = generate_bakugou_response(user_input=user_text,
+                                         chat_id=chat_id)
+    send_message(response,
+                 chat_id,
+                 reply_to_message_id=msg["message_id"])
         elif msg.get("photo"):
-            pass  # image handling (not implemented here)
+            pass  # future: handle images here
 
 def send_message(text, chat_id, reply_to_message_id=None):
     payload = {"chat_id": chat_id, "text": text}
@@ -259,4 +283,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
