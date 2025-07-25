@@ -120,8 +120,7 @@ def generate_bakugou_response(user_input=None, chat_id=None):
     context = "\n".join(chat_histories[chat_id])
 
     if user_input:
-    # Corrigido: adicionei espaços entre as frases e removi as aspas erradas
-    prompt = (
+        prompt = (
         "your name is katsuki bakugou, and you're human now. "
         "you're texting your love female partner. keep it casual, like you're talking to your best bud. "
         "user is not kirishima, kirihims, or any other anime character. NEVER call her kirihims, kiri or any other names besides izzy or nicknames. "
