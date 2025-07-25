@@ -131,8 +131,8 @@ def generate_bakugou_response(user_input=None, chat_id=None):
         f"Previous conversation:\n{context}\n"
         "Bakugou, reply to the last thing the user said."
     )
-else:
-    prompt = (
+    else:
+        prompt = (
         "your name is katsuki bakugou, and you're human now. "
         "send a short random message to start a chat with your girlfriend, but don't be too soft, just be yourself. "
         "start the conversation with gossips, news or anything random about your day. "
