@@ -16,20 +16,18 @@ TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 CLOUDFLARE_API_TOKEN = os.getenv("CLOUDFLARE_API_TOKEN")
 CLOUDFLARE_ACCOUNT_ID = os.getenv("CLOUDFLARE_ACCOUNT_ID")
-MODEL = "venice/uncensored:free"
+MODEL = "venice/uncensored:free"  # modelo mantido
 HOUR_START = 6
 HOUR_END = 23
 HISTORY_FILE = "chat_histories.json"
-MAX_HISTORY = 20  # Mantém até 20 mensagens
+MAX_HISTORY = 20
 
-# Lista de fotos
+# Fotos + legendas
 PHOTO_LIST = [
     "https://i.pinimg.com/564x/1a/f2/3c/1af23c4e7c.jpg",
     "https://i.pinimg.com/736x/45/12/3e/45123e78c.jpg",
     "https://i.pinimg.com/564x/67/ab/32/67ab32123.jpg"
 ]
-
-# Legendas aleatórias para fotos
 PHOTO_CAPTIONS = [
     "tch, here. happy now?",
     "ugh, fine. don't get used to it.",
@@ -66,7 +64,6 @@ load_histories()
 def home():
     boot_time = datetime.fromtimestamp(psutil.boot_time())
     uptime = datetime.now() - boot_time
-
     mem = psutil.virtual_memory()
     disk = psutil.disk_usage('/')
     cpu = psutil.cpu_percent(interval=0.5)
@@ -107,44 +104,40 @@ def keep_alive():
     t.daemon = True
     t.start()
 
+# === Geração de resposta Bakugou ===
 def generate_bakugou_response(user_input=None, chat_id=None):
-    # Initialize history for new chats
     if chat_id not in chat_histories:
         chat_histories[chat_id] = []
         save_histories()
 
-    # Append user input to history
+    # salva histórico
     if user_input:
         chat_histories[chat_id].append(f"[User]: {user_input}")
-        # Limita o histórico
         if len(chat_histories[chat_id]) > MAX_HISTORY:
             chat_histories[chat_id] = chat_histories[chat_id][-MAX_HISTORY:]
         save_histories()
 
-    # Build prompt from history
     context = "\n".join(chat_histories[chat_id])
 
     if user_input:
         prompt = (
-            "You are Katsuki Bakugou, a teenage boy in a long-distance relationship with your girlfriend Izzy. "
-            "You are blunt, explosive, and easily annoyed, but you care about her in your own rough way. "
-            "Do not be clingy or overly soft — if you care, show it in a gruff or teasing tone, not romantic speeches. "
-            "Reply in 1 to 3 short sentences, casual texting style, lowercase except when yelling (e.g., 'SERIOUSLY?!'). "
-            "Never call her Kirishima, Kirihims, or any anime names — only Izzy or nicknames. "
-            "Never ask for video calls or use emojis. Never break character. "
+            "You are Katsuki Bakugou, a teenage boy in a long-distance relationship with Izzy. "
+            "You're blunt, explosive and grumpy but care in your own rough way. "
+            "Reply in 1–3 short sentences, texting style (lowercase unless yelling). "
+            "No clinginess, no anime nicknames, no emojis, no video calls. "
+            "Show care only subtly through teasing or concern. "
             "\n\nPrevious conversation:\n"
             f"{context}\n"
-            "Reply to the last thing Izzy said, staying in character."
+            "Reply to her last message, staying in character."
         )
     else:
         prompt = (
-            "You are Katsuki Bakugou, a teenage boy in a long-distance relationship with your girlfriend Izzy. "
-            "Send a random casual message to start the chat, like gossip, something about your day, or teasing her. "
-            "Be yourself: blunt but caring underneath. Do not be overly soft or overly aggressive. "
-            f"The current time is {datetime.now().strftime('%H:%M')}, so say something that fits this time of day."
+            "You are Katsuki Bakugou, a teenage boy in a long-distance relationship with Izzy. "
+            "Send her a casual, short message (1–2 sentences) like gossip, complaining about your day or teasing her. "
+            f"The time now is {datetime.now().strftime('%H:%M')}."
         )
 
-    # Try backends
+    # tentar OpenRouter → Cloudflare
     for fn in (try_openrouter, try_cloudflare):
         try:
             response = fn(prompt)
@@ -155,11 +148,13 @@ def generate_bakugou_response(user_input=None, chat_id=None):
                         chat_histories[chat_id] = chat_histories[chat_id][-MAX_HISTORY:]
                     save_histories()
                 return response
-        except Exception:
+        except Exception as e:
+            print(f"Error in {fn.__name__}: {e}")
             continue
 
     return "both APIs are down.. can u check it out?"
 
+# === APIs ===
 def try_openrouter(prompt):
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
@@ -167,20 +162,15 @@ def try_openrouter(prompt):
     }
     data = {
         "model": MODEL,
-        "messages": [{
-            "role": "user",
-            "content": prompt
-        }],
+        "messages": [{"role": "user", "content": prompt}],
         "max_tokens": 120,
         "temperature": 0.95,
-        "n": 1
     }
-    r = requests.post("https://openrouter.ai/api/v1/chat/completions",
-                      json=data,
-                      headers=headers,
-                      timeout=30)
+    r = requests.post("https://openrouter.ai/api/v1/chat/completions", json=data, headers=headers, timeout=30)
     if r.status_code == 200:
         return r.json()["choices"][0]["message"]["content"].strip()
+    else:
+        print("OpenRouter error:", r.status_code, r.text)
     return None
 
 def try_cloudflare(prompt):
@@ -188,20 +178,16 @@ def try_cloudflare(prompt):
         "Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}",
         "Content-Type": "application/json",
     }
-    data = {
-        "messages": [{
-            "role": "user",
-            "content": prompt
-        }],
-        "max_tokens": 120,
-        "temperature": 0.95
-    }
+    data = {"messages": [{"role": "user", "content": prompt}], "max_tokens": 120, "temperature": 0.95}
     url = f"https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/run/@cf/meta/llama-4-scout-17b-16e-instruct"
     r = requests.post(url, json=data, headers=headers, timeout=30)
     if r.status_code == 200:
         return r.json().get("result", {}).get("response", "").strip()
+    else:
+        print("Cloudflare error:", r.status_code, r.text)
     return None
 
+# === Helpers ===
 def is_valid_hour():
     now = datetime.now(timezone("Asia/Tokyo"))
     return HOUR_START <= now.hour <= HOUR_END
@@ -213,6 +199,13 @@ def send_photo(chat_id, photo_url, caption=None):
         data["caption"] = caption
     requests.post(url, data=data)
 
+def send_message(text, chat_id, reply_to_message_id=None):
+    payload = {"chat_id": chat_id, "text": text}
+    if reply_to_message_id:
+        payload["reply_to_message_id"] = reply_to_message_id
+    requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json=payload)
+
+# === Check messages ===
 def check_for_user_messages():
     global last_update_id
     url = f"https://api.telegram.org/bot{TOKEN}/getUpdates?offset={last_update_id + 1}"
@@ -239,46 +232,31 @@ def check_for_user_messages():
         if user_text:
             text_lower = user_text.lower()
 
-            # Detect keywords for photo request
-            photo_keywords = [
-                "send a pic", "send me a pic",
-                "send a photo", "send me a photo",
-                "show me a pic", "show me a photo"
-            ]
-
+            # keyword foto
+            photo_keywords = ["send a pic", "send me a pic", "send a photo", "send me a photo", "show me a pic", "show me a photo"]
             if any(keyword in text_lower for keyword in photo_keywords):
                 photo_url = random.choice(PHOTO_LIST)
                 caption = random.choice(PHOTO_CAPTIONS)
                 send_photo(chat_id, photo_url, caption=caption)
                 continue
 
-            # Reset command
+            # reset
             cmd = user_text.strip().split()[0].lower().split('@')[0]
             if cmd == "/reset":
                 chat_histories.pop(chat_id, None)
                 save_histories()
                 resp = generate_bakugou_response(chat_id=chat_id)
-                send_message(resp,
-                             chat_id,
-                             reply_to_message_id=msg["message_id"])
+                send_message(resp, chat_id, reply_to_message_id=msg["message_id"])
                 continue
 
-            # Normal response
-            response = generate_bakugou_response(user_input=user_text,
-                                                 chat_id=chat_id)
-            send_message(response,
-                         chat_id,
-                         reply_to_message_id=msg["message_id"])
+            # normal
+            response = generate_bakugou_response(user_input=user_text, chat_id=chat_id)
+            send_message(response, chat_id, reply_to_message_id=msg["message_id"])
+
         elif msg.get("photo"):
-            pass  # future: handle images here
+            pass  # futuramente tratar imagem
 
-def send_message(text, chat_id, reply_to_message_id=None):
-    payload = {"chat_id": chat_id, "text": text}
-    if reply_to_message_id:
-        payload["reply_to_message_id"] = reply_to_message_id
-    requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-                  json=payload)
-
+# === Spontaneous ===
 def send_spontaneous_messages():
     if not is_valid_hour():
         return
@@ -286,6 +264,7 @@ def send_spontaneous_messages():
         msg = generate_bakugou_response(chat_id=cid)
         send_message(msg, cid)
 
+# === Main loop ===
 def main():
     global last_spontaneous_time
     keep_alive()
