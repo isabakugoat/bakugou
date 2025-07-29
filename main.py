@@ -13,28 +13,18 @@ from pytz import timezone
 
 # === Config ===
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 CLOUDFLARE_API_TOKEN = os.getenv("CLOUDFLARE_API_TOKEN")
 CLOUDFLARE_ACCOUNT_ID = os.getenv("CLOUDFLARE_ACCOUNT_ID")
-MODEL = "venice/uncensored:free"  # modelo mantido
+
+# Modelos
+CLOUDFLARE_MODEL = "@cf/meta/llama-3.1-8b-instruct"
+OPENAI_MODEL = "gpt-4o-mini"
+
 HOUR_START = 6
 HOUR_END = 23
 HISTORY_FILE = "chat_histories.json"
 MAX_HISTORY = 20
-
-# Fotos + legendas
-PHOTO_LIST = [
-    "https://i.pinimg.com/564x/1a/f2/3c/1af23c4e7c.jpg",
-    "https://i.pinimg.com/736x/45/12/3e/45123e78c.jpg",
-    "https://i.pinimg.com/564x/67/ab/32/67ab32123.jpg"
-]
-PHOTO_CAPTIONS = [
-    "tch, here. happy now?",
-    "ugh, fine. don't get used to it.",
-    "why the hell do you even want this?",
-    "whatever. here.",
-    "quit asking, dumbass. there."
-]
 
 # === Globals ===
 last_spontaneous_time = datetime.now() - timedelta(hours=3)
@@ -124,7 +114,6 @@ def generate_bakugou_response(user_input=None, chat_id=None):
         "your name is katsuki bakugou, and you're human now. "
         "you're texting your love female partner. keep it casual, like you're talking to your best bud. "
         "user is not kirishima, kirihims, or any other anime character. NEVER call her kirihims, kiri or any other names besides izzy or nicknames. "
-        "don't be too aggressive but don't be too soft either."
         "send short messages and don't ever ask user to video call. "
         "you're a teenager and you have a long distance relationship with user. you can't hang out with her because you live too far away. "
         "use all lowercase, but yell stuff like \"SERIOUSLY?!\" when you're pissed.\n\n"
@@ -141,8 +130,8 @@ def generate_bakugou_response(user_input=None, chat_id=None):
         "you're a teenager and you have a long distance relationship with user. you can't hang out with her because you live too far away.\n"
         f"time now is {datetime.now().strftime('%H:%M')}, so say something that feels natural for that hour."
     )
-    # tentar OpenRouter → Cloudflare
-    for fn in (try_openrouter, try_cloudflare):
+    # Tenta Cloudflare, fallback OpenAI
+    for fn in (try_cloudflare, try_openai):
         try:
             response = fn(prompt)
             if response:
@@ -159,31 +148,13 @@ def generate_bakugou_response(user_input=None, chat_id=None):
     return "both APIs are down.. can u check it out?"
 
 # === APIs ===
-def try_openrouter(prompt):
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-    }
-    data = {
-        "model": MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 120,
-        "temperature": 0.95,
-    }
-    r = requests.post("https://openrouter.ai/api/v1/chat/completions", json=data, headers=headers, timeout=30)
-    if r.status_code == 200:
-        return r.json()["choices"][0]["message"]["content"].strip()
-    else:
-        print("OpenRouter error:", r.status_code, r.text)
-    return None
-
 def try_cloudflare(prompt):
     headers = {
         "Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}",
         "Content-Type": "application/json",
     }
     data = {"messages": [{"role": "user", "content": prompt}], "max_tokens": 120, "temperature": 0.95}
-    url = f"https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/run/@cf/meta/llama-4-scout-17b-16e-instruct"
+    url = f"https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/run/{CLOUDFLARE_MODEL}"
     r = requests.post(url, json=data, headers=headers, timeout=30)
     if r.status_code == 200:
         return r.json().get("result", {}).get("response", "").strip()
@@ -191,17 +162,57 @@ def try_cloudflare(prompt):
         print("Cloudflare error:", r.status_code, r.text)
     return None
 
+def try_openai(prompt):
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    data = {
+        "model": OPENAI_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 120,
+        "temperature": 0.95,
+    }
+    r = requests.post("https://api.openai.com/v1/chat/completions", json=data, headers=headers, timeout=30)
+    if r.status_code == 200:
+        return r.json()["choices"][0]["message"]["content"].strip()
+    else:
+        print("OpenAI error:", r.status_code, r.text)
+    return None
+
+# === Imagens ===
+def generate_image(prompt):
+    url = f"https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/run/@cf/stabilityai/stable-diffusion-xl-base-1.0"
+    headers = {
+        "Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}",
+        "Content-Type": "application/json",
+    }
+    data = {"prompt": prompt}
+    r = requests.post(url, json=data, headers=headers, timeout=60)
+    if r.status_code == 200:
+        # Cloudflare retorna base64 da imagem
+        img_b64 = r.json()["result"]["image"]
+        return img_b64
+    else:
+        print("Image generation error:", r.status_code, r.text)
+    return None
+
+def send_generated_photo(chat_id, prompt):
+    img_b64 = generate_image(prompt)
+    if not img_b64:
+        send_message("couldn't generate image, try again later.", chat_id)
+        return
+    # Converte base64 em arquivo e envia
+    url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
+    photo_bytes = base64.b64decode(img_b64)
+    files = {"photo": ("image.jpg", photo_bytes)}
+    data = {"chat_id": chat_id, "caption": f"here: {prompt}"}
+    requests.post(url, data=data, files=files)
+
 # === Helpers ===
 def is_valid_hour():
     now = datetime.now(timezone("Asia/Tokyo"))
     return HOUR_START <= now.hour <= HOUR_END
-
-def send_photo(chat_id, photo_url, caption=None):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
-    data = {"chat_id": chat_id, "photo": photo_url}
-    if caption:
-        data["caption"] = caption
-    requests.post(url, data=data)
 
 def send_message(text, chat_id, reply_to_message_id=None):
     payload = {"chat_id": chat_id, "text": text}
@@ -236,12 +247,10 @@ def check_for_user_messages():
         if user_text:
             text_lower = user_text.lower()
 
-            # keyword foto
-            photo_keywords = ["send a pic", "send me a pic", "send a photo", "send me a photo", "show me a pic", "show me a photo"]
-            if any(keyword in text_lower for keyword in photo_keywords):
-                photo_url = random.choice(PHOTO_LIST)
-                caption = random.choice(PHOTO_CAPTIONS)
-                send_photo(chat_id, photo_url, caption=caption)
+            # comando de foto
+            if text_lower.startswith("/foto"):
+                prompt = user_text.replace("/foto", "").strip() or "random anime boy"
+                send_generated_photo(chat_id, prompt)
                 continue
 
             # reset
